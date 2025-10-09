@@ -11,6 +11,9 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
   Users,
   Calendar,
@@ -19,16 +22,25 @@ import {
   Clock,
   Activity,
   Settings,
+  Send,
+  UserPlus,
 } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProjectDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
   const [project, setProject] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [applicationMessage, setApplicationMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [hasApplied, setHasApplied] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -39,10 +51,10 @@ export default function ProjectDetailPage() {
 
     const userData = JSON.parse(storedUser);
     setUser(userData);
-    loadProject(params.id as string);
+    loadProject(params.id as string, userData);
   }, [router, params.id]);
 
-  const loadProject = async (projectId: string) => {
+  const loadProject = async (projectId: string, userData: any) => {
     try {
       const response = await fetch(`/api/projects?id=${projectId}`);
       if (response.ok) {
@@ -54,6 +66,14 @@ export default function ProjectDetailPage() {
         if (memberIds.length > 0) {
           loadMembers(memberIds);
         }
+
+        // Load applications if owner
+        if (userData.id === data.ownerId) {
+          loadApplications(projectId);
+        }
+
+        // Check if user has already applied
+        checkUserApplication(projectId, userData.id);
       }
     } catch (error) {
       console.error("Failed to load project:", error);
@@ -74,6 +94,103 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const loadApplications = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/applications?projectId=${projectId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setApplications(data);
+      }
+    } catch (error) {
+      console.error("Failed to load applications:", error);
+    }
+  };
+
+  const checkUserApplication = async (projectId: string, userId: number) => {
+    try {
+      const response = await fetch(`/api/applications?projectId=${projectId}&userId=${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setHasApplied(data.length > 0);
+      }
+    } catch (error) {
+      console.error("Failed to check application:", error);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!applicationMessage.trim()) {
+      toast({
+        title: "Message required",
+        description: "Please provide a message with your application",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: parseInt(params.id as string),
+          userId: user.id,
+          message: applicationMessage,
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Application submitted!",
+          description: "The project owner will review your application soon.",
+        });
+        setApplyDialogOpen(false);
+        setApplicationMessage("");
+        setHasApplied(true);
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Failed to submit",
+          description: error.error || "Something went wrong",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit application",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleApplicationAction = async (applicationId: number, status: string) => {
+    try {
+      const response = await fetch(`/api/applications/${applicationId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Application updated",
+          description: `Application ${status}`,
+        });
+        loadApplications(params.id as string);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update application",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading || !project) {
     return (
       <div className="min-h-screen bg-background">
@@ -87,6 +204,7 @@ export default function ProjectDetailPage() {
 
   const tasks = JSON.parse(project.tasks || "[]");
   const isOwner = user?.id === project.ownerId;
+  const isMember = JSON.parse(project.members || "[]").includes(user?.id);
 
   return (
     <div className="min-h-screen bg-background">
@@ -111,16 +229,64 @@ export default function ProjectDetailPage() {
                     {project.status}
                   </Badge>
                   {isOwner && <Badge variant="outline">Owner</Badge>}
+                  {isMember && !isOwner && <Badge variant="outline">Member</Badge>}
                 </div>
                 <CardTitle className="text-3xl mb-2">{project.title}</CardTitle>
                 <CardDescription>{project.description}</CardDescription>
               </div>
-              {isOwner && (
-                <Button variant="outline">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Manage
-                </Button>
-              )}
+              <div className="flex gap-2">
+                {isOwner && (
+                  <Button variant="outline">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Manage
+                  </Button>
+                )}
+                {!isOwner && !isMember && !hasApplied && (
+                  <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Apply to Join
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Apply to {project.title}</DialogTitle>
+                        <DialogDescription>
+                          Tell the project owner why you'd like to join this project
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="message">Your Message</Label>
+                          <Textarea
+                            id="message"
+                            placeholder="Explain your experience, skills, and why you're interested in this project..."
+                            value={applicationMessage}
+                            onChange={(e) => setApplicationMessage(e.target.value)}
+                            rows={6}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setApplyDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleApply} disabled={submitting}>
+                          <Send className="w-4 h-4 mr-2" />
+                          {submitting ? "Submitting..." : "Submit Application"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
+                {hasApplied && !isMember && (
+                  <Button disabled variant="outline">
+                    <Clock className="w-4 h-4 mr-2" />
+                    Application Pending
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -159,10 +325,15 @@ export default function ProjectDetailPage() {
 
         {/* Content Tabs */}
         <Tabs defaultValue="tasks" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="members">Members</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
+            {isOwner && (
+              <TabsTrigger value="applications">
+                Applications ({applications.length})
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="tasks" className="space-y-4">
@@ -262,6 +433,71 @@ export default function ProjectDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {isOwner && (
+            <TabsContent value="applications" className="space-y-4">
+              {applications.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No applications yet</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {applications.map((app) => (
+                    <Card key={app.id}>
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-lg">Application #{app.id}</CardTitle>
+                            <CardDescription>
+                              Submitted {new Date(app.createdAt).toLocaleDateString()}
+                            </CardDescription>
+                          </div>
+                          <Badge
+                            variant={
+                              app.status === "accepted"
+                                ? "default"
+                                : app.status === "rejected"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {app.status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div>
+                          <h4 className="font-semibold text-sm mb-2">Message</h4>
+                          <p className="text-sm text-muted-foreground">{app.message}</p>
+                        </div>
+                        {app.status === "pending" && (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleApplicationAction(app.id, "accepted")}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleApplicationAction(app.id, "rejected")}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

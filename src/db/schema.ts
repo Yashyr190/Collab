@@ -86,3 +86,13 @@ export const endorsements = sqliteTable('endorsements', {
   skill: text('skill').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const applications = sqliteTable('applications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').references(() => projects.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  message: text('message').notNull(),
+  status: text('status').notNull().default('pending'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

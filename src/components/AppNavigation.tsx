@@ -30,6 +30,7 @@ import {
   Moon,
   Sun,
   Shield,
+  FileText,
 } from "lucide-react";
 
 export function AppNavigation() {
@@ -92,6 +93,7 @@ export function AppNavigation() {
     { href: "/dashboard", label: "Dashboard", icon: Home },
     { href: "/feed", label: "Feed", icon: Users },
     { href: "/projects", label: "Projects", icon: FolderKanban },
+    { href: "/apply", label: "Applications", icon: FileText },
     { href: "/messages", label: "Messages", icon: MessageSquare },
     { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
     { href: "/resources", label: "Resources", icon: BookOpen },
