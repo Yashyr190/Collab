@@ -1,184 +1,162 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { projects, users } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { projects } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 
+// GET handler - Read projects with filters
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const ownerId = searchParams.get('ownerId');
     const status = searchParams.get('status');
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100);
     const offset = parseInt(searchParams.get('offset') || '0');
-
-    // Single project by ID
+    
     if (id) {
-      if (isNaN(parseInt(id))) {
-        return NextResponse.json(
-          { error: 'Valid ID is required', code: 'INVALID_ID' },
-          { status: 400 }
-        );
+      const record = await db.select().from(projects).where(eq(projects.id, parseInt(id))).limit(1);
+      if (record.length === 0) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
-
-      const project = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, parseInt(id)))
-        .limit(1);
-
-      if (project.length === 0) {
-        return NextResponse.json(
-          { error: 'Project not found', code: 'PROJECT_NOT_FOUND' },
-          { status: 404 }
-        );
+      return NextResponse.json(record[0]);
+    } else {
+      let conditions = [];
+      
+      if (ownerId) {
+        conditions.push(eq(projects.ownerId, parseInt(ownerId)));
       }
-
-      return NextResponse.json(project[0], { status: 200 });
-    }
-
-    // List projects with filters
-    let query = db.select().from(projects);
-    const conditions = [];
-
-    if (ownerId) {
-      if (isNaN(parseInt(ownerId))) {
-        return NextResponse.json(
-          { error: 'Valid ownerId is required', code: 'INVALID_OWNER_ID' },
-          { status: 400 }
-        );
+      if (status) {
+        conditions.push(eq(projects.status, status));
       }
-      conditions.push(eq(projects.ownerId, parseInt(ownerId)));
-    }
-
-    if (status) {
-      const validStatuses = ['planning', 'active', 'completed'];
-      if (!validStatuses.includes(status)) {
-        return NextResponse.json(
-          { 
-            error: 'Invalid status. Must be one of: planning, active, completed', 
-            code: 'INVALID_STATUS' 
-          },
-          { status: 400 }
-        );
+      
+      let query = db.select().from(projects);
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
       }
-      conditions.push(eq(projects.status, status));
+      
+      const records = await query.limit(limit).offset(offset);
+      return NextResponse.json(records);
     }
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-
-    const results = await query
-      .orderBy(desc(projects.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    return NextResponse.json(results, { status: 200 });
   } catch (error) {
     console.error('GET error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + error },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }
 
+// POST handler - Create project
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { title, description, ownerId, members, tasks, status, progress } = body;
-
-    // Validate required fields
-    if (!title || title.trim() === '') {
-      return NextResponse.json(
-        { error: 'Title is required', code: 'MISSING_TITLE' },
-        { status: 400 }
-      );
+    const { ownerId, title, description, members, tasks, status, progress } = await request.json();
+    
+    if (!ownerId || !title || !status) {
+      return NextResponse.json({ 
+        error: "ownerId, title, and status are required", 
+        code: "MISSING_REQUIRED_FIELDS" 
+      }, { status: 400 });
     }
 
-    if (!ownerId) {
-      return NextResponse.json(
-        { error: 'Owner ID is required', code: 'MISSING_OWNER_ID' },
-        { status: 400 }
-      );
+    const validStatuses = ['active', 'completed', 'archived'];
+    
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ 
+        error: "Status must be one of: active, completed, archived", 
+        code: "INVALID_STATUS" 
+      }, { status: 400 });
     }
 
-    if (isNaN(parseInt(ownerId))) {
-      return NextResponse.json(
-        { error: 'Valid owner ID is required', code: 'INVALID_OWNER_ID' },
-        { status: 400 }
-      );
+    if (progress !== undefined && (progress < 0 || progress > 100)) {
+      return NextResponse.json({ 
+        error: "Progress must be between 0 and 100", 
+        code: "INVALID_PROGRESS" 
+      }, { status: 400 });
     }
-
-    // Validate status if provided
-    if (status) {
-      const validStatuses = ['planning', 'active', 'completed'];
-      if (!validStatuses.includes(status)) {
-        return NextResponse.json(
-          { 
-            error: 'Invalid status. Must be one of: planning, active, completed', 
-            code: 'INVALID_STATUS' 
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Validate progress if provided
-    if (progress !== undefined) {
-      const progressNum = parseInt(progress);
-      if (isNaN(progressNum) || progressNum < 0 || progressNum > 100) {
-        return NextResponse.json(
-          { 
-            error: 'Progress must be a number between 0 and 100', 
-            code: 'INVALID_PROGRESS' 
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Verify owner exists in users table
-    const owner = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, parseInt(ownerId)))
-      .limit(1);
-
-    if (owner.length === 0) {
-      return NextResponse.json(
-        { error: 'Owner not found', code: 'OWNER_NOT_FOUND' },
-        { status: 400 }
-      );
-    }
-
-    // Prepare insert data
-    const now = new Date().toISOString();
-    const insertData = {
-      title: title.trim(),
-      description: description?.trim() || null,
+    
+    const newRecord = await db.insert(projects).values({
       ownerId: parseInt(ownerId),
+      title: title.trim(),
+      description: description || null,
       members: members || [],
       tasks: tasks || [],
-      status: status || 'planning',
-      progress: progress !== undefined ? parseInt(progress) : 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // Insert project
-    const newProject = await db
-      .insert(projects)
-      .values(insertData)
-      .returning();
-
-    return NextResponse.json(newProject[0], { status: 201 });
+      status,
+      progress: progress || 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }).returning();
+    
+    return NextResponse.json(newRecord[0], { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + error },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+// PUT handler - Update project
+export async function PUT(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+    
+    const updates = await request.json();
+    delete updates.ownerId; // Never allow ownerId updates
+
+    if (updates.progress !== undefined && (updates.progress < 0 || updates.progress > 100)) {
+      return NextResponse.json({ 
+        error: "Progress must be between 0 and 100", 
+        code: "INVALID_PROGRESS" 
+      }, { status: 400 });
+    }
+    
+    const updatedRecord = await db.update(projects)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(projects.id, parseInt(id)))
+      .returning();
+    
+    if (updatedRecord.length === 0) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json(updatedRecord[0]);
+  } catch (error) {
+    console.error('PUT error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+// DELETE handler
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+    
+    const deletedRecord = await db.delete(projects)
+      .where(eq(projects.id, parseInt(id)))
+      .returning();
+    
+    if (deletedRecord.length === 0) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ message: 'Project deleted successfully', id: parseInt(id) });
+  } catch (error) {
+    console.error('DELETE error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

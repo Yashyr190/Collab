@@ -3,112 +3,87 @@ import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest) {
   try {
-    const { id } = params;
-
-    // Validate ID parameter
+    const id = request.url.split('/').pop();
+    
     if (!id || isNaN(parseInt(id))) {
-      return NextResponse.json(
-        {
-          error: 'Valid ID is required',
-          code: 'INVALID_ID',
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
     }
 
-    const userId = parseInt(id);
-
-    // Parse request body
-    const body = await request.json();
-
-    // Extract allowed update fields only
-    const allowedFields = ['name', 'avatar', 'bio', 'skills', 'xp', 'badges'];
-    const updates: Record<string, any> = {};
-
-    // Validate and sanitize inputs
-    for (const field of allowedFields) {
-      if (field in body) {
-        const value = body[field];
-
-        // Handle field-specific validation
-        if (field === 'name' && typeof value === 'string') {
-          updates.name = value.trim();
-        } else if (field === 'avatar' && typeof value === 'string') {
-          updates.avatar = value.trim();
-        } else if (field === 'bio' && typeof value === 'string') {
-          updates.bio = value.trim();
-        } else if (field === 'skills' && Array.isArray(value)) {
-          updates.skills = value;
-        } else if (field === 'xp' && typeof value === 'number') {
-          updates.xp = value;
-        } else if (field === 'badges' && Array.isArray(value)) {
-          updates.badges = value;
-        }
-      }
+    const record = await db.select().from(users).where(eq(users.id, parseInt(id))).limit(1);
+    
+    if (record.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Check if there are any valid updates
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json(
-        {
-          error: 'No valid update fields provided',
-          code: 'NO_UPDATES',
-        },
-        { status: 400 }
-      );
+    const { password: _, ...userWithoutPassword } = record[0];
+    return NextResponse.json(userWithoutPassword);
+  } catch (error) {
+    console.error('GET error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const id = request.url.split('/').pop();
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
     }
 
-    // Check if user exists
-    const existingUser = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const updates = await request.json();
+    delete updates.password; // Never allow password updates
 
-    if (existingUser.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'User not found',
-          code: 'USER_NOT_FOUND',
-        },
-        { status: 404 }
-      );
-    }
-
-    // Update user with provided fields
-    const updatedUser = await db
-      .update(users)
-      .set(updates)
-      .where(eq(users.id, userId))
+    const updatedRecord = await db.update(users)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(users.id, parseInt(id)))
       .returning();
-
-    if (updatedUser.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'Failed to update user',
-          code: 'UPDATE_FAILED',
-        },
-        { status: 500 }
-      );
+    
+    if (updatedRecord.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Remove password from response
-    const { password, ...userWithoutPassword } = updatedUser[0];
-
-    return NextResponse.json(userWithoutPassword, { status: 200 });
+    const { password: _, ...userWithoutPassword } = updatedRecord[0];
+    return NextResponse.json(userWithoutPassword);
   } catch (error) {
     console.error('PUT error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error: ' + error,
-        code: 'INTERNAL_ERROR',
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = request.url.split('/').pop();
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+
+    const deletedRecord = await db.delete(users)
+      .where(eq(users.id, parseInt(id)))
+      .returning();
+    
+    if (deletedRecord.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ message: 'User deleted successfully', id: parseInt(id) });
+  } catch (error) {
+    console.error('DELETE error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

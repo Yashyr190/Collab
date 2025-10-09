@@ -1,36 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { messages } from '@/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, or, and, asc } from 'drizzle-orm';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest) {
   try {
-    const conversationId = params.id;
+    const otherUserId = request.url.split('/').pop();
     const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
     
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
-    const offset = parseInt(searchParams.get('offset') || '0');
+    if (!userId) {
+      return NextResponse.json({ 
+        error: "userId query parameter is required", 
+        code: "MISSING_USER_ID" 
+      }, { status: 400 });
+    }
 
-    const results = await db
-      .select()
+    if (!otherUserId || isNaN(parseInt(otherUserId))) {
+      return NextResponse.json({ 
+        error: "Valid user ID in path is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+
+    const currentUserId = parseInt(userId);
+    const otherUserIdNum = parseInt(otherUserId);
+
+    const records = await db.select()
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
-      .orderBy(asc(messages.timestamp))
-      .limit(limit)
-      .offset(offset);
+      .where(
+        or(
+          and(eq(messages.senderId, currentUserId), eq(messages.receiverId, otherUserIdNum)),
+          and(eq(messages.senderId, otherUserIdNum), eq(messages.receiverId, currentUserId))
+        )
+      )
+      .orderBy(asc(messages.createdAt));
 
-    return NextResponse.json(results, { status: 200 });
+    return NextResponse.json(records);
   } catch (error) {
     console.error('GET error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error: ' + error,
-        code: 'INTERNAL_SERVER_ERROR'
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

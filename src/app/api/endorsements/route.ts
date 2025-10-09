@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { endorsements, users } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { endorsements } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -58,96 +58,59 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, endorsedBy, skill } = body;
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required', code: 'MISSING_USER_ID' },
-        { status: 400 }
-      );
+    const { userId, endorsedBy, skill } = await request.json();
+    
+    if (!userId || !endorsedBy || !skill) {
+      return NextResponse.json({ 
+        error: "userId, endorsedBy, and skill are required", 
+        code: "MISSING_REQUIRED_FIELDS" 
+      }, { status: 400 });
     }
 
-    if (!endorsedBy) {
-      return NextResponse.json(
-        { error: 'endorsedBy is required', code: 'MISSING_ENDORSED_BY' },
-        { status: 400 }
-      );
+    // Check for self-endorsement
+    if (parseInt(userId) === parseInt(endorsedBy)) {
+      return NextResponse.json({ 
+        error: "Cannot endorse yourself", 
+        code: "SELF_ENDORSEMENT" 
+      }, { status: 400 });
     }
 
-    if (!skill || typeof skill !== 'string' || skill.trim() === '') {
-      return NextResponse.json(
-        { error: 'skill is required and cannot be empty', code: 'MISSING_SKILL' },
-        { status: 400 }
-      );
+    if (!skill.trim()) {
+      return NextResponse.json({ 
+        error: "Skill cannot be empty", 
+        code: "EMPTY_SKILL" 
+      }, { status: 400 });
     }
 
-    const userIdNum = parseInt(userId);
-    const endorsedByNum = parseInt(endorsedBy);
-
-    if (isNaN(userIdNum)) {
-      return NextResponse.json(
-        { error: 'userId must be a valid integer', code: 'INVALID_USER_ID' },
-        { status: 400 }
-      );
-    }
-
-    if (isNaN(endorsedByNum)) {
-      return NextResponse.json(
-        { error: 'endorsedBy must be a valid integer', code: 'INVALID_ENDORSED_BY' },
-        { status: 400 }
-      );
-    }
-
-    if (userIdNum === endorsedByNum) {
-      return NextResponse.json(
-        { error: 'Cannot endorse yourself', code: 'SELF_ENDORSEMENT_NOT_ALLOWED' },
-        { status: 400 }
-      );
-    }
-
-    const userCheck = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userIdNum))
+    // Check for duplicate endorsement
+    const existing = await db.select()
+      .from(endorsements)
+      .where(
+        and(
+          eq(endorsements.userId, parseInt(userId)),
+          eq(endorsements.endorsedBy, parseInt(endorsedBy)),
+          eq(endorsements.skill, skill.trim())
+        )
+      )
       .limit(1);
 
-    if (userCheck.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found', code: 'USER_NOT_FOUND' },
-        { status: 400 }
-      );
+    if (existing.length > 0) {
+      return NextResponse.json({ 
+        error: "This endorsement already exists", 
+        code: "DUPLICATE_ENDORSEMENT" 
+      }, { status: 400 });
     }
-
-    const endorserCheck = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, endorsedByNum))
-      .limit(1);
-
-    if (endorserCheck.length === 0) {
-      return NextResponse.json(
-        { error: 'Endorser not found', code: 'ENDORSER_NOT_FOUND' },
-        { status: 400 }
-      );
-    }
-
-    const newEndorsement = await db
-      .insert(endorsements)
-      .values({
-        userId: userIdNum,
-        endorsedBy: endorsedByNum,
-        skill: skill.trim(),
-        createdAt: new Date().toISOString(),
-      })
-      .returning();
-
-    return NextResponse.json(newEndorsement[0], { status: 201 });
+    
+    const newRecord = await db.insert(endorsements).values({
+      userId: parseInt(userId),
+      endorsedBy: parseInt(endorsedBy),
+      skill: skill.trim(),
+      createdAt: new Date().toISOString(),
+    }).returning();
+    
+    return NextResponse.json(newRecord[0], { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + error },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

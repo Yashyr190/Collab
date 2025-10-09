@@ -48,7 +48,7 @@ export default function ProfilePage() {
   const loadProfile = async (userId: string) => {
     try {
       const [userRes, projectsRes, postsRes, endorsementsRes] = await Promise.all([
-        fetch(`/api/users?id=${userId}`),
+        fetch(`/api/users/${userId}`),
         fetch(`/api/projects?ownerId=${userId}`),
         fetch(`/api/posts?userId=${userId}`),
         fetch(`/api/endorsements/${userId}`),
@@ -139,7 +139,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {profileUser.skills?.map((skill: string, i: number) => (
+                  {Array.isArray(profileUser.skills) && profileUser.skills.map((skill: string, i: number) => (
                     <Badge key={i} variant="secondary">
                       {skill}
                     </Badge>
@@ -153,11 +153,6 @@ export default function ProfilePage() {
                         <MessageSquare className="w-4 h-4 mr-2" />
                         Message
                       </Button>
-                    </Link>
-                  )}
-                  {isOwnProfile && (
-                    <Link href="/settings">
-                      <Button variant="outline">Edit Profile</Button>
                     </Link>
                   )}
                 </div>
@@ -213,7 +208,7 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {profileUser.badges?.length || 0}
+                {Array.isArray(profileUser.badges) ? profileUser.badges.length : 0}
               </div>
               <p className="text-xs text-muted-foreground">achievements</p>
             </CardContent>
@@ -262,7 +257,7 @@ export default function ProfilePage() {
                       <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
                         <span className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
-                          {JSON.parse(project.members || "[]").length} members
+                          {Array.isArray(project.members) ? project.members.length : 0} members
                         </span>
                         <span>{project.progress}% complete</span>
                       </div>
@@ -284,32 +279,34 @@ export default function ProfilePage() {
               </Card>
             ) : (
               posts.map((post) => (
-                <Card key={post.id}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge>{post.type}</Badge>
-                          <Badge variant="outline">{post.status}</Badge>
+                <Link key={post.id} href={`/posts/${post.id}`}>
+                  <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge>{post.type}</Badge>
+                            <Badge variant="outline">{post.status}</Badge>
+                          </div>
+                          <CardTitle className="text-xl">{post.title}</CardTitle>
+                          <CardDescription>{post.description}</CardDescription>
                         </div>
-                        <CardTitle className="text-xl">{post.title}</CardTitle>
-                        <CardDescription>{post.description}</CardDescription>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="w-4 h-4" />
-                      {new Date(post.createdAt).toLocaleDateString()}
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(post.createdAt).toLocaleDateString()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))
             )}
           </TabsContent>
 
           <TabsContent value="badges" className="space-y-4">
-            {!profileUser.badges || profileUser.badges.length === 0 ? (
+            {!Array.isArray(profileUser.badges) || profileUser.badges.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Award className="w-16 h-16 text-muted-foreground mx-auto mb-4" />

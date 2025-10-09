@@ -1,174 +1,159 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { posts, users } from '@/db/schema';
-import { eq, like, and, desc } from 'drizzle-orm';
+import { posts } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 
+// GET handler - Read posts with filters
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-
-    // Single record fetch
-    if (id) {
-      if (isNaN(parseInt(id))) {
-        return NextResponse.json(
-          { error: 'Valid ID is required', code: 'INVALID_ID' },
-          { status: 400 }
-        );
-      }
-
-      const post = await db
-        .select()
-        .from(posts)
-        .where(eq(posts.id, parseInt(id)))
-        .limit(1);
-
-      if (post.length === 0) {
-        return NextResponse.json(
-          { error: 'Post not found', code: 'POST_NOT_FOUND' },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(post[0], { status: 200 });
-    }
-
-    // List with pagination and filters
-    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100);
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const search = searchParams.get('search');
+    const userId = searchParams.get('userId');
     const type = searchParams.get('type');
     const status = searchParams.get('status');
-    const userId = searchParams.get('userId');
-
-    let query = db.select().from(posts);
-
-    // Build conditions array
-    const conditions = [];
-
-    if (search) {
-      conditions.push(like(posts.title, `%${search}%`));
-    }
-
-    if (type) {
-      conditions.push(eq(posts.type, type));
-    }
-
-    if (status) {
-      conditions.push(eq(posts.status, status));
-    }
-
-    if (userId) {
-      if (isNaN(parseInt(userId))) {
-        return NextResponse.json(
-          { error: 'Valid userId is required', code: 'INVALID_USER_ID' },
-          { status: 400 }
-        );
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100);
+    const offset = parseInt(searchParams.get('offset') || '0');
+    
+    if (id) {
+      const record = await db.select().from(posts).where(eq(posts.id, parseInt(id))).limit(1);
+      if (record.length === 0) {
+        return NextResponse.json({ error: 'Post not found' }, { status: 404 });
       }
-      conditions.push(eq(posts.userId, parseInt(userId)));
+      return NextResponse.json(record[0]);
+    } else {
+      let conditions = [];
+      
+      if (userId) {
+        conditions.push(eq(posts.userId, parseInt(userId)));
+      }
+      if (type) {
+        conditions.push(eq(posts.type, type));
+      }
+      if (status) {
+        conditions.push(eq(posts.status, status));
+      }
+      
+      let query = db.select().from(posts);
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
+      }
+      
+      const records = await query.limit(limit).offset(offset);
+      return NextResponse.json(records);
     }
-
-    // Apply conditions if any exist
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-
-    const results = await query
-      .orderBy(desc(posts.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    return NextResponse.json(results, { status: 200 });
   } catch (error) {
     console.error('GET error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + error },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }
 
+// POST handler - Create post
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, title, description, tags, type, status } = body;
-
-    // Validate required fields
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required', code: 'MISSING_USER_ID' },
-        { status: 400 }
-      );
+    const { userId, title, description, type, tags, status } = await request.json();
+    
+    if (!userId || !title || !type || !status) {
+      return NextResponse.json({ 
+        error: "userId, title, type, and status are required", 
+        code: "MISSING_REQUIRED_FIELDS" 
+      }, { status: 400 });
     }
 
-    if (!title || title.trim() === '') {
-      return NextResponse.json(
-        { error: 'title is required', code: 'MISSING_TITLE' },
-        { status: 400 }
-      );
-    }
-
-    if (!type || type.trim() === '') {
-      return NextResponse.json(
-        { error: 'type is required', code: 'MISSING_TYPE' },
-        { status: 400 }
-      );
-    }
-
-    // Validate type enum
-    const validTypes = ['project', 'collab', 'discussion'];
+    const validTypes = ['collab', 'project', 'discussion'];
+    const validStatuses = ['open', 'in_progress', 'closed'];
+    
     if (!validTypes.includes(type)) {
-      return NextResponse.json(
-        {
-          error: `type must be one of: ${validTypes.join(', ')}`,
-          code: 'INVALID_TYPE',
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ 
+        error: "Type must be one of: collab, project, discussion", 
+        code: "INVALID_TYPE" 
+      }, { status: 400 });
     }
-
-    // Validate userId is a valid integer
-    if (isNaN(parseInt(userId))) {
-      return NextResponse.json(
-        { error: 'Valid userId is required', code: 'INVALID_USER_ID' },
-        { status: 400 }
-      );
+    
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ 
+        error: "Status must be one of: open, in_progress, closed", 
+        code: "INVALID_STATUS" 
+      }, { status: 400 });
     }
-
-    // Verify userId exists in users table
-    const userExists = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, parseInt(userId)))
-      .limit(1);
-
-    if (userExists.length === 0) {
-      return NextResponse.json(
-        { error: 'User does not exist', code: 'USER_NOT_FOUND' },
-        { status: 400 }
-      );
-    }
-
-    // Prepare insert data with auto-generated fields
-    const insertData = {
+    
+    const newRecord = await db.insert(posts).values({
       userId: parseInt(userId),
       title: title.trim(),
-      description: description ? description.trim() : null,
+      description: description || null,
+      type,
       tags: tags || [],
-      type: type.trim(),
-      status: status || 'open',
+      status,
       createdAt: new Date().toISOString(),
-    };
-
-    // Insert post and return created record
-    const newPost = await db.insert(posts).values(insertData).returning();
-
-    return NextResponse.json(newPost[0], { status: 201 });
+      updatedAt: new Date().toISOString(),
+    }).returning();
+    
+    return NextResponse.json(newRecord[0], { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error: ' + error },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+// PUT handler - Update post
+export async function PUT(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+    
+    const updates = await request.json();
+    delete updates.userId; // Never allow userId updates
+    
+    const updatedRecord = await db.update(posts)
+      .set({
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(posts.id, parseInt(id)))
+      .returning();
+    
+    if (updatedRecord.length === 0) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json(updatedRecord[0]);
+  } catch (error) {
+    console.error('PUT error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
+  }
+}
+
+// DELETE handler
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id || isNaN(parseInt(id))) {
+      return NextResponse.json({ 
+        error: "Valid ID is required", 
+        code: "INVALID_ID" 
+      }, { status: 400 });
+    }
+    
+    const deletedRecord = await db.delete(posts)
+      .where(eq(posts.id, parseInt(id)))
+      .returning();
+    
+    if (deletedRecord.length === 0) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ message: 'Post deleted successfully', id: parseInt(id) });
+  } catch (error) {
+    console.error('DELETE error:', error);
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

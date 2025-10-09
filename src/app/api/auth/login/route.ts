@@ -2,81 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import bcrypt from 'bcrypt';
+const bcrypt = require('bcrypt');
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, password } = body;
-
+    const { email, password } = await request.json();
+    
     // Validate required fields
-    if (!email) {
-      return NextResponse.json(
-        { 
-          error: 'Email is required',
-          code: 'MISSING_EMAIL' 
-        },
-        { status: 400 }
-      );
+    if (!email || !password) {
+      return NextResponse.json({ 
+        error: "Email and password are required", 
+        code: "MISSING_CREDENTIALS" 
+      }, { status: 400 });
     }
 
-    if (!password) {
-      return NextResponse.json(
-        { 
-          error: 'Password is required',
-          code: 'MISSING_PASSWORD' 
-        },
-        { status: 400 }
-      );
+    // Find user by email
+    const user = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
+    
+    if (user.length === 0) {
+      return NextResponse.json({ 
+        error: "Invalid email or password", 
+        code: "INVALID_CREDENTIALS" 
+      }, { status: 401 });
     }
 
-    // Query database for user by email (case-insensitive)
-    const userResult = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email.toLowerCase().trim()))
-      .limit(1);
-
-    // If user not found, return 401 with generic error message
-    if (userResult.length === 0) {
-      return NextResponse.json(
-        { 
-          error: 'Invalid email or password',
-          code: 'INVALID_CREDENTIALS' 
-        },
-        { status: 401 }
-      );
-    }
-
-    const user = userResult[0];
-
-    // Compare provided password with hashed password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    // If password doesn't match, return 401 with generic error message
+    // Compare password
+    const isPasswordValid = await bcrypt.compare(password, user[0].password);
+    
     if (!isPasswordValid) {
-      return NextResponse.json(
-        { 
-          error: 'Invalid email or password',
-          code: 'INVALID_CREDENTIALS' 
-        },
-        { status: 401 }
-      );
+      return NextResponse.json({ 
+        error: "Invalid email or password", 
+        code: "INVALID_CREDENTIALS" 
+      }, { status: 401 });
     }
 
-    // Authentication successful - return user object without password
-    const { password: _, ...userWithoutPassword } = user;
-
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user[0];
+    
     return NextResponse.json(userWithoutPassword, { status: 200 });
-
   } catch (error) {
     console.error('POST error:', error);
-    return NextResponse.json(
-      { 
-        error: 'Internal server error: ' + error,
-        code: 'INTERNAL_ERROR' 
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }

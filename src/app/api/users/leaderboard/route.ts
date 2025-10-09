@@ -5,22 +5,21 @@ import { desc } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 100);
 
-    const results = await db.select().from(users).orderBy(desc(users.xp)).limit(limit);
+    const records = await db.select({
+      id: users.id,
+      name: users.name,
+      avatar: users.avatar,
+      xp: users.xp,
+      badges: users.badges,
+      skills: users.skills,
+    }).from(users).orderBy(desc(users.xp)).limit(limit);
 
-    const usersWithoutPassword = results.map(({ password, ...user }) => user);
-
-    return NextResponse.json(usersWithoutPassword, { status: 200 });
+    return NextResponse.json(records);
   } catch (error) {
     console.error('GET error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error: ' + error,
-        code: 'INTERNAL_SERVER_ERROR'
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });
   }
 }
