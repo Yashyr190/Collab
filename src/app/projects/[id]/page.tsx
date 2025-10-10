@@ -12,8 +12,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Users,
   Calendar,
@@ -24,23 +26,19 @@ import {
   Settings,
   Send,
   UserPlus,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
 // Helper function to safely parse JSON
 const safeJsonParse = (str: any, fallback: any = []) => {
-  // If already an array or object, return it directly
   if (Array.isArray(str)) return str;
   if (typeof str === 'object' && str !== null) return str;
-  
-  // If not a string, return fallback
   if (typeof str !== 'string') return fallback;
-  
-  // If empty string, return fallback
   if (str.trim() === "") return fallback;
   
-  // Try to parse JSON string
   try {
     return JSON.parse(str);
   } catch (e) {
@@ -57,11 +55,21 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [applicationMessage, setApplicationMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
+  
+  // Task form state
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    status: "pending" as "pending" | "in_progress" | "completed",
+  });
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -92,6 +100,12 @@ export default function ProjectDetailPage() {
           loadMembers(memberIds);
         }
 
+        // Load tasks from new API
+        loadTasks(projectId);
+
+        // Load activities from new API
+        loadActivities(projectId);
+
         // Load applications if owner
         if (userData.id === data.ownerId) {
           loadApplications(projectId);
@@ -116,6 +130,30 @@ export default function ProjectDetailPage() {
       setMembers(membersData);
     } catch (error) {
       console.error("Failed to load members:", error);
+    }
+  };
+
+  const loadTasks = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/tasks`);
+      if (response.ok) {
+        const data = await response.json();
+        setTasks(data);
+      }
+    } catch (error) {
+      console.error("Failed to load tasks:", error);
+    }
+  };
+
+  const loadActivities = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/activity`);
+      if (response.ok) {
+        const data = await response.json();
+        setActivities(data);
+      }
+    } catch (error) {
+      console.error("Failed to load activities:", error);
     }
   };
 
@@ -205,12 +243,127 @@ export default function ProjectDetailPage() {
           title: "Application updated",
           description: `Application ${status}`,
         });
+        // Reload everything to reflect the new member
+        loadProject(params.id as string, user);
         loadApplications(params.id as string);
       }
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update application",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim()) {
+      toast({
+        title: "Title required",
+        description: "Please provide a task title",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/projects/${params.id}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTask),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Task created!",
+          description: "Task has been added to the project",
+        });
+        setTaskDialogOpen(false);
+        setNewTask({ title: "", description: "", status: "pending" });
+        loadTasks(params.id as string);
+        
+        // Create activity log
+        await fetch(`/api/projects/${params.id}/activity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            action: "created_task",
+            description: `${user.name} created task: ${newTask.title}`,
+          }),
+        });
+        loadActivities(params.id as string);
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Failed to create task",
+          description: error.error || "Something went wrong",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create task",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId: number, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/projects/${params.id}/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Task updated!",
+          description: `Task status changed to ${newStatus}`,
+        });
+        loadTasks(params.id as string);
+        
+        // Create activity log
+        const task = tasks.find(t => t.id === taskId);
+        await fetch(`/api/projects/${params.id}/activity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            action: "updated_task",
+            description: `${user.name} updated task "${task?.title}" to ${newStatus}`,
+          }),
+        });
+        loadActivities(params.id as string);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update task",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    try {
+      const response = await fetch(`/api/projects/${params.id}/tasks/${taskId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Task deleted",
+          description: "Task has been removed from the project",
+        });
+        loadTasks(params.id as string);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete task",
         variant: "destructive",
       });
     }
@@ -227,7 +380,6 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const tasks = safeJsonParse(project.tasks, []);
   const isOwner = user?.id === project.ownerId;
   const isMember = safeJsonParse(project.members, []).includes(user?.id);
 
@@ -351,8 +503,8 @@ export default function ProjectDetailPage() {
         {/* Content Tabs */}
         <Tabs defaultValue="tasks" className="space-y-6">
           <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4' : 'grid-cols-3'}`}>
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
-            <TabsTrigger value="members">Members</TabsTrigger>
+            <TabsTrigger value="tasks">Tasks ({tasks.length})</TabsTrigger>
+            <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
             {isOwner && (
               <TabsTrigger value="applications">
@@ -362,11 +514,82 @@ export default function ProjectDetailPage() {
           </TabsList>
 
           <TabsContent value="tasks" className="space-y-4">
+            {(isOwner || isMember) && (
+              <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Task
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Task</DialogTitle>
+                    <DialogDescription>
+                      Add a new task to track progress on this project
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="task-title">Title *</Label>
+                      <Input
+                        id="task-title"
+                        placeholder="Task title..."
+                        value={newTask.title}
+                        onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="task-description">Description</Label>
+                      <Textarea
+                        id="task-description"
+                        placeholder="Task description..."
+                        value={newTask.description}
+                        onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                        rows={4}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="task-status">Status</Label>
+                      <Select
+                        value={newTask.status}
+                        onValueChange={(value: any) => setNewTask({ ...newTask, status: value })}
+                      >
+                        <SelectTrigger id="task-status">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setTaskDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleCreateTask}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Task
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
+
             {tasks.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <CheckCircle2 className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No tasks yet</p>
+                  <p className="text-muted-foreground mb-4">No tasks yet</p>
+                  {(isOwner || isMember) && (
+                    <Button onClick={() => setTaskDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add First Task
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -376,25 +599,55 @@ export default function ProjectDetailPage() {
                     <CardContent className="pt-6">
                       <div className="flex items-start gap-4">
                         {task.status === "completed" ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5" />
+                          <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
                         ) : task.status === "in_progress" ? (
-                          <Clock className="w-5 h-5 text-blue-500 mt-0.5" />
+                          <Clock className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
                         ) : (
-                          <Circle className="w-5 h-5 text-muted-foreground mt-0.5" />
+                          <Circle className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" />
                         )}
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <h4 className="font-semibold mb-1">{task.title}</h4>
-                          <Badge
-                            variant={
-                              task.status === "completed"
-                                ? "default"
-                                : task.status === "in_progress"
-                                ? "secondary"
-                                : "outline"
-                            }
-                          >
-                            {task.status.replace("_", " ")}
-                          </Badge>
+                          {task.description && (
+                            <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {(isOwner || isMember) ? (
+                              <Select
+                                value={task.status}
+                                onValueChange={(value) => handleUpdateTaskStatus(task.id, value)}
+                              >
+                                <SelectTrigger className="w-[140px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">Pending</SelectItem>
+                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                variant={
+                                  task.status === "completed"
+                                    ? "default"
+                                    : task.status === "in_progress"
+                                    ? "secondary"
+                                    : "outline"
+                                }
+                              >
+                                {task.status.replace("_", " ")}
+                              </Badge>
+                            )}
+                            {(isOwner || isMember) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteTask(task.id)}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </CardContent>
@@ -451,12 +704,32 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Activity className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">Activity timeline coming soon</p>
-              </CardContent>
-            </Card>
+            {activities.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Activity className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No activity yet</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity) => (
+                  <Card key={activity.id}>
+                    <CardContent className="pt-6">
+                      <div className="flex items-start gap-4">
+                        <div className="w-2 h-2 rounded-full bg-primary mt-2 shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm">{activity.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(activity.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {isOwner && (

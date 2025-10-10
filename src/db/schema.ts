@@ -37,6 +37,7 @@ export const projects = sqliteTable('projects', {
   description: text('description'),
   members: text('members', { mode: 'json' }),
   tasks: text('tasks', { mode: 'json' }),
+  activities: text('activities', { mode: 'json' }),
   status: text('status').notNull(),
   progress: integer('progress').default(0),
   createdAt: text('created_at').notNull(),

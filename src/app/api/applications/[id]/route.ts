@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { applications } from '@/db/schema';
+import { applications, projects, users, notifications } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -52,6 +52,21 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Get the application to check status change
+    const existingApp = await db.select()
+      .from(applications)
+      .where(eq(applications.id, parseInt(id)))
+      .limit(1);
+
+    if (existingApp.length === 0) {
+      return NextResponse.json({ error: 'Application not found' }, { status: 404 });
+    }
+
+    const application = existingApp[0];
+    const statusChanged = updates.status && updates.status !== application.status;
+    const isAccepted = updates.status === 'accepted';
+
+    // Update the application
     const updatedRecord = await db.update(applications)
       .set({
         ...updates,
@@ -62,6 +77,81 @@ export async function PUT(request: NextRequest) {
     
     if (updatedRecord.length === 0) {
       return NextResponse.json({ error: 'Application not found' }, { status: 404 });
+    }
+
+    // If status changed to "accepted", perform additional actions
+    if (statusChanged && isAccepted) {
+      // Get project details
+      const project = await db.select()
+        .from(projects)
+        .where(eq(projects.id, application.projectId))
+        .limit(1);
+
+      if (project.length > 0) {
+        const currentMembers = (project[0].members as number[]) || [];
+        
+        // Check if user is already a member (prevent duplicates)
+        if (!currentMembers.includes(application.userId)) {
+          // Add user to project members
+          const updatedMembers = [...currentMembers, application.userId];
+          
+          // Get user details for activity log
+          const user = await db.select()
+            .from(users)
+            .where(eq(users.id, application.userId))
+            .limit(1);
+
+          const userName = user.length > 0 ? user[0].name : 'User';
+
+          // Get current activities and parse properly
+          let currentActivities: any[] = [];
+          
+          if (project[0].activities) {
+            if (typeof project[0].activities === 'string') {
+              try {
+                currentActivities = JSON.parse(project[0].activities);
+              } catch (e) {
+                currentActivities = [];
+              }
+            } else if (Array.isArray(project[0].activities)) {
+              currentActivities = project[0].activities;
+            }
+          }
+
+          const maxActivityId = currentActivities.length > 0
+            ? Math.max(...currentActivities.map((a: any) => a.id || 0))
+            : 0;
+
+          // Create activity log entry
+          const newActivity = {
+            id: maxActivityId + 1,
+            userId: application.userId,
+            action: 'joined',
+            description: `${userName} joined the project`,
+            timestamp: new Date().toISOString()
+          };
+
+          const updatedActivities = [newActivity, ...currentActivities];
+
+          // Update project with new member and activity
+          await db.update(projects)
+            .set({
+              members: updatedMembers,
+              activities: JSON.stringify(updatedActivities),
+              updatedAt: new Date().toISOString()
+            })
+            .where(eq(projects.id, application.projectId));
+
+          // Create notification for the applicant
+          await db.insert(notifications).values({
+            userId: application.userId,
+            type: 'application',
+            message: `Your application to "${project[0].title}" has been accepted`,
+            read: false,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
     }
 
     return NextResponse.json(updatedRecord[0]);
