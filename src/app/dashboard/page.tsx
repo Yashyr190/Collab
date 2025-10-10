@@ -22,6 +22,26 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Safe JSON parsing helper
+const safeJsonParse = (str: any, fallback: any = []) => {
+  // If already an array or object, return it
+  if (Array.isArray(str)) return str;
+  if (typeof str === 'object' && str !== null) return str;
+  
+  // If not a string, return fallback
+  if (typeof str !== 'string') return fallback;
+  
+  // If empty string, return fallback
+  if (str.trim() === "") return fallback;
+  
+  // Try to parse
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    return fallback;
+  }
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
@@ -155,7 +175,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {user.badges?.length || 0}
+                {safeJsonParse(user.badges, []).length}
               </div>
               <p className="text-xs text-muted-foreground">Achievements earned</p>
             </CardContent>
@@ -215,7 +235,7 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Users className="w-4 h-4" />
-                              {JSON.parse(project.members || "[]").length} members
+                              {safeJsonParse(project.members, []).length} members
                             </span>
                             <span>{project.progress}% complete</span>
                           </div>
@@ -248,11 +268,11 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {user.badges && user.badges.length > 0 && (
+                {safeJsonParse(user.badges, []).length > 0 && (
                   <div>
                     <p className="text-sm font-medium mb-2">Badges</p>
                     <div className="flex flex-wrap gap-2">
-                      {user.badges.slice(0, 3).map((badge: string, i: number) => (
+                      {safeJsonParse(user.badges, []).slice(0, 3).map((badge: string, i: number) => (
                         <Badge key={i} variant="secondary">
                           <Award className="w-3 h-3 mr-1" />
                           {badge}
@@ -262,11 +282,11 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {user.skills && user.skills.length > 0 && (
+                {safeJsonParse(user.skills, []).length > 0 && (
                   <div>
                     <p className="text-sm font-medium mb-2">Skills</p>
                     <div className="flex flex-wrap gap-2">
-                      {user.skills.slice(0, 4).map((skill: string, i: number) => (
+                      {safeJsonParse(user.skills, []).slice(0, 4).map((skill: string, i: number) => (
                         <Badge key={i} variant="outline">
                           {skill}
                         </Badge>
