@@ -28,6 +28,27 @@ import {
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
+// Helper function to safely parse JSON
+const safeJsonParse = (str: any, fallback: any = []) => {
+  // If already an array or object, return it directly
+  if (Array.isArray(str)) return str;
+  if (typeof str === 'object' && str !== null) return str;
+  
+  // If not a string, return fallback
+  if (typeof str !== 'string') return fallback;
+  
+  // If empty string, return fallback
+  if (str.trim() === "") return fallback;
+  
+  // Try to parse JSON string
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    console.warn("Failed to parse JSON:", str, e);
+    return fallback;
+  }
+};
+
 export default function ProjectDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -49,7 +70,11 @@ export default function ProjectDetailPage() {
       return;
     }
 
-    const userData = JSON.parse(storedUser);
+    const userData = safeJsonParse(storedUser, null);
+    if (!userData) {
+      router.push("/auth/login");
+      return;
+    }
     setUser(userData);
     loadProject(params.id as string, userData);
   }, [router, params.id]);
@@ -62,7 +87,7 @@ export default function ProjectDetailPage() {
         setProject(data);
         
         // Load members
-        const memberIds = JSON.parse(data.members || "[]");
+        const memberIds = safeJsonParse(data.members, []);
         if (memberIds.length > 0) {
           loadMembers(memberIds);
         }
@@ -202,9 +227,9 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const tasks = JSON.parse(project.tasks || "[]");
+  const tasks = safeJsonParse(project.tasks, []);
   const isOwner = user?.id === project.ownerId;
-  const isMember = JSON.parse(project.members || "[]").includes(user?.id);
+  const isMember = safeJsonParse(project.members, []).includes(user?.id);
 
   return (
     <div className="min-h-screen bg-background">
