@@ -79,7 +79,26 @@ export default function FeedPage() {
       const response = await fetch("/api/posts?limit=50");
       if (response.ok) {
         const data = await response.json();
-        setPosts(data);
+        // Robust tag parsing that handles all formats
+        const postsWithParsedTags = data.map((post: any) => {
+          let parsedTags = [];
+          try {
+            if (Array.isArray(post.tags)) {
+              parsedTags = post.tags;
+            } else if (typeof post.tags === 'string') {
+              if (post.tags.startsWith('[')) {
+                parsedTags = JSON.parse(post.tags);
+              } else if (post.tags) {
+                parsedTags = post.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse tags for post:', post.id, e);
+            parsedTags = [];
+          }
+          return { ...post, tags: parsedTags };
+        });
+        setPosts(postsWithParsedTags);
       }
     } catch (error) {
       console.error("Failed to load posts:", error);
