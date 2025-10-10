@@ -686,9 +686,9 @@ export default function ProjectDetailPage() {
                             <Badge variant="secondary">Owner</Badge>
                           )}
                         </div>
-                        {member.skills && member.skills.length > 0 && (
+                        {member.skills && safeJsonParse(member.skills, []).length > 0 && (
                           <div className="flex flex-wrap gap-2 mt-4">
-                            {member.skills.slice(0, 3).map((skill: string, i: number) => (
+                            {safeJsonParse(member.skills, []).slice(0, 3).map((skill: string, i: number) => (
                               <Badge key={i} variant="outline" className="text-xs">
                                 {skill}
                               </Badge>
