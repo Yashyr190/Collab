@@ -243,9 +243,9 @@ export default function ProjectDetailPage() {
           title: "Application updated",
           description: `Application ${status}`,
         });
-        // Reload everything to reflect the new member
-        loadProject(params.id as string, user);
-        loadApplications(params.id as string);
+        // Reload everything to reflect the new member - AWAIT these calls
+        await loadProject(params.id as string, user);
+        await loadApplications(params.id as string);
       }
     } catch (error) {
       toast({
