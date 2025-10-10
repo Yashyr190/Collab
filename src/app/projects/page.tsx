@@ -37,9 +37,11 @@ import {
   Calendar,
 } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<any[]>([]);
@@ -127,9 +129,25 @@ export default function ProjectsPage() {
         setProjects([data, ...projects]);
         setDialogOpen(false);
         setNewProject({ title: "", description: "", status: "planning" });
+        toast({
+          title: "Project created!",
+          description: "Your project has been created successfully.",
+        });
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Failed to create project",
+          description: error.error || "Something went wrong",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Failed to create project:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create project. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setCreating(false);
     }

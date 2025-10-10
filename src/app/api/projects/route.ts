@@ -56,11 +56,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const validStatuses = ['active', 'completed', 'archived'];
+    const validStatuses = ['planning', 'active', 'completed', 'archived'];
     
     if (!validStatuses.includes(status)) {
       return NextResponse.json({ 
-        error: "Status must be one of: active, completed, archived", 
+        error: "Status must be one of: planning, active, completed, archived", 
         code: "INVALID_STATUS" 
       }, { status: 400 });
     }

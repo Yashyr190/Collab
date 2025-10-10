@@ -33,7 +33,28 @@ export default function LeaderboardPage() {
       const response = await fetch("/api/users/leaderboard?limit=50");
       if (response.ok) {
         const data = await response.json();
-        setUsers(data);
+        
+        // Parse badges to ensure they're always arrays
+        const usersWithParsedBadges = data.map((user: any) => {
+          let parsedBadges = [];
+          try {
+            if (Array.isArray(user.badges)) {
+              parsedBadges = user.badges;
+            } else if (typeof user.badges === 'string') {
+              if (user.badges.startsWith('[')) {
+                parsedBadges = JSON.parse(user.badges);
+              } else if (user.badges) {
+                parsedBadges = user.badges.split(',').map((b: string) => b.trim()).filter((b: string) => b);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse badges for user:', user.id, e);
+            parsedBadges = [];
+          }
+          return { ...user, badges: parsedBadges };
+        });
+        
+        setUsers(usersWithParsedBadges);
       }
     } catch (error) {
       console.error("Failed to load leaderboard:", error);
