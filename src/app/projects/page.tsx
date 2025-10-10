@@ -39,6 +39,17 @@ import {
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
+// Safe JSON parse helper
+const safeJsonParse = (value: any, fallback: any = []) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
 export default function ProjectsPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -319,7 +330,7 @@ export default function ProjectsPage() {
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Users className="w-4 h-4" />
-                        {JSON.parse(project.members || "[]").length}
+                        {safeJsonParse(project.members, []).length}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
