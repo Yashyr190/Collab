@@ -89,28 +89,32 @@ export default function ProjectDetailPage() {
 
   const loadProject = async (projectId: string, userData: any) => {
     try {
-      const response = await fetch(`/api/projects?id=${projectId}`, {
+      // Force fresh data with timestamp
+      const timestamp = Date.now();
+      const response = await fetch(`/api/projects?id=${projectId}&_t=${timestamp}`, {
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
         },
       });
       if (response.ok) {
         const data = await response.json();
         setProject(data);
         
-        // Load members
+        // Load members with fresh data
         const memberIds = safeJsonParse(data.members, []);
+        console.log('Loading members:', memberIds);
         if (memberIds.length > 0) {
           await loadMembers(memberIds);
         } else {
           setMembers([]);
         }
 
-        // Load tasks from new API
+        // Load tasks
         await loadTasks(projectId);
 
-        // Load activities from new API
+        // Load activities
         await loadActivities(projectId);
 
         // Load applications if owner
@@ -130,13 +134,22 @@ export default function ProjectDetailPage() {
 
   const loadMembers = async (memberIds: number[]) => {
     try {
+      console.log('Fetching members for IDs:', memberIds);
+      const timestamp = Date.now();
       const memberPromises = memberIds.map((id) =>
-        fetch(`/api/users?id=${id}`).then((res) => res.json())
+        fetch(`/api/users?id=${id}&_t=${timestamp}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+          },
+        }).then((res) => res.json())
       );
       const membersData = await Promise.all(memberPromises);
+      console.log('Loaded members:', membersData);
       setMembers(membersData);
     } catch (error) {
       console.error("Failed to load members:", error);
+      setMembers([]);
     }
   };
 
@@ -250,9 +263,15 @@ export default function ProjectDetailPage() {
           title: "Application updated",
           description: `Application ${status}`,
         });
-        // Reload everything to reflect the new member - AWAIT these calls
+        
+        // Force complete reload with delay to ensure DB is updated
+        await new Promise(resolve => setTimeout(resolve, 500));
         await loadProject(params.id as string, user);
         await loadApplications(params.id as string);
+        
+        // Force re-render by updating a state
+        setLoading(true);
+        setLoading(false);
       }
     } catch (error) {
       toast({
@@ -365,8 +384,13 @@ export default function ProjectDetailPage() {
           const updatedUser = { ...user, xp: (user.xp || 0) + data.xpAwarded };
           localStorage.setItem("user", JSON.stringify(updatedUser));
           setUser(updatedUser);
+          
+          // Trigger navbar update
+          window.dispatchEvent(new Event('userUpdated'));
         }
         
+        // Reload tasks and project to get updated progress
+        await loadTasks(params.id as string);
         await loadProject(params.id as string, user);
       }
     } catch (error) {

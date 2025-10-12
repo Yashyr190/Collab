@@ -42,14 +42,33 @@ export function AppNavigation() {
 
   useEffect(() => {
     // Load user from localStorage
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      const userData = JSON.parse(storedUser);
-      setUser(userData);
-      
-      // Load notifications count
-      loadNotifications(userData.id);
-    }
+    const loadUser = () => {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+        
+        // Load notifications count
+        loadNotifications(userData.id);
+      }
+    };
+
+    loadUser();
+
+    // Listen for user updates
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'user') {
+        loadUser();
+      }
+    };
+
+    // Custom event for same-window updates
+    const handleUserUpdate = () => {
+      loadUser();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('userUpdated', handleUserUpdate);
 
     // Check theme
     const theme = localStorage.getItem("theme");
@@ -57,6 +76,11 @@ export function AppNavigation() {
       setIsDark(true);
       document.documentElement.classList.add("dark");
     }
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('userUpdated', handleUserUpdate);
+    };
   }, []);
 
   const loadNotifications = async (userId: number) => {
