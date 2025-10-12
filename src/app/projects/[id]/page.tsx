@@ -345,36 +345,35 @@ export default function ProjectDetailPage() {
       const response = await fetch(`/api/projects/${params.id}/tasks/${taskId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ 
+          status: newStatus,
+          userId: user.id
+        }),
       });
 
       if (response.ok) {
-        toast({
-          title: "Task updated!",
-          description: `Task status changed to ${newStatus}`,
-        });
-        await loadTasks(params.id as string);
+        const data = await response.json();
         
-        // Reload project to get updated progress
+        // Show XP notification if earned
+        if (data.xpAwarded && data.xpAwarded > 0) {
+          toast({
+            title: "Task Completed! 🎉",
+            description: `You earned +${data.xpAwarded} XP!`,
+          });
+          
+          // Update user XP in localStorage
+          const updatedUser = { ...user, xp: (user.xp || 0) + data.xpAwarded };
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+          setUser(updatedUser);
+        }
+        
         await loadProject(params.id as string, user);
-        
-        // Create activity log
-        const task = tasks.find(t => t.id === taskId);
-        await fetch(`/api/projects/${params.id}/activity`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            action: "updated_task",
-            description: `${user.name} updated task "${task?.title}" to ${newStatus}`,
-          }),
-        });
-        loadActivities(params.id as string);
       }
     } catch (error) {
+      console.error("Failed to update task:", error);
       toast({
         title: "Error",
-        description: "Failed to update task",
+        description: "Failed to update task status",
         variant: "destructive",
       });
     }

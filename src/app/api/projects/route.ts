@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { projects } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
+import { XP_REWARDS } from '@/lib/badges';
 
 // GET handler - Read projects with filters
 export async function GET(request: NextRequest) {
@@ -47,44 +48,46 @@ export async function GET(request: NextRequest) {
 // POST handler - Create project
 export async function POST(request: NextRequest) {
   try {
-    const { ownerId, title, description, members, tasks, status, progress } = await request.json();
-    
-    if (!ownerId || !title || !status) {
+    const body = await request.json();
+    const { title, description, ownerId, status } = body;
+
+    if (!title || !ownerId) {
       return NextResponse.json({ 
-        error: "ownerId, title, and status are required", 
-        code: "MISSING_REQUIRED_FIELDS" 
+        error: 'Title and ownerId are required' 
       }, { status: 400 });
     }
 
-    const validStatuses = ['planning', 'active', 'completed', 'archived'];
-    
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json({ 
-        error: "Status must be one of: planning, active, completed, archived", 
-        code: "INVALID_STATUS" 
-      }, { status: 400 });
-    }
-
-    if (progress !== undefined && (progress < 0 || progress > 100)) {
-      return NextResponse.json({ 
-        error: "Progress must be between 0 and 100", 
-        code: "INVALID_PROGRESS" 
-      }, { status: 400 });
-    }
-    
-    const newRecord = await db.insert(projects).values({
-      ownerId: parseInt(ownerId),
-      title: title.trim(),
-      description: description || null,
-      members: members || [],
-      tasks: tasks || [],
-      status,
-      progress: progress || 0,
+    const newProject = await db.insert(projects).values({
+      title,
+      description: description || '',
+      ownerId,
+      members: [],
+      tasks: [],
+      activities: [],
+      status: status || 'planning',
+      progress: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }).returning();
-    
-    return NextResponse.json(newRecord[0], { status: 201 });
+
+    // Award XP for creating a project
+    try {
+      await fetch(`${request.nextUrl.origin}/api/users/${ownerId}/xp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          xpAmount: XP_REWARDS.PROJECT_CREATE,
+          action: 'project_create'
+        })
+      });
+    } catch (error) {
+      console.error('Failed to award XP:', error);
+    }
+
+    return NextResponse.json({
+      ...newProject[0],
+      xpAwarded: XP_REWARDS.PROJECT_CREATE
+    });
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });

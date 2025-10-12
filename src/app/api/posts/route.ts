@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { posts } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { XP_REWARDS } from '@/lib/badges';
 
 // GET handler - Read posts with filters
 export async function GET(request: NextRequest) {
@@ -88,7 +89,24 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     }).returning();
     
-    return NextResponse.json(newRecord[0], { status: 201 });
+    // Award XP for creating a post
+    try {
+      await fetch(`${request.nextUrl.origin}/api/users/${userId}/xp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          xpAmount: XP_REWARDS.POST_CREATE,
+          action: 'post_create'
+        })
+      });
+    } catch (error) {
+      console.error('Failed to award XP:', error);
+    }
+    
+    return NextResponse.json({
+      ...newRecord[0],
+      xpAwarded: XP_REWARDS.POST_CREATE
+    }, { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { applications, projects, users, notifications } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { XP_REWARDS } from '@/lib/badges';
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,8 +40,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const updates = await request.json();
-    delete updates.userId; // Never allow userId updates
-    delete updates.projectId; // Never allow projectId updates
+    delete updates.userId;
+    delete updates.projectId;
 
     if (updates.status) {
       const validStatuses = ['pending', 'accepted', 'rejected'];
@@ -52,7 +53,6 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Get the application to check status change
     const existingApp = await db.select()
       .from(applications)
       .where(eq(applications.id, parseInt(id)))
@@ -66,7 +66,6 @@ export async function PUT(request: NextRequest) {
     const statusChanged = updates.status && updates.status !== application.status;
     const isAccepted = updates.status === 'accepted';
 
-    // Update the application
     const updatedRecord = await db.update(applications)
       .set({
         ...updates,
@@ -79,9 +78,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Application not found' }, { status: 404 });
     }
 
-    // If status changed to "accepted", perform additional actions
     if (statusChanged && isAccepted) {
-      // Get project details
       const project = await db.select()
         .from(projects)
         .where(eq(projects.id, application.projectId))
@@ -90,12 +87,9 @@ export async function PUT(request: NextRequest) {
       if (project.length > 0) {
         const currentMembers = (project[0].members as number[]) || [];
         
-        // Check if user is already a member (prevent duplicates)
         if (!currentMembers.includes(application.userId)) {
-          // Add user to project members
           const updatedMembers = [...currentMembers, application.userId];
           
-          // Get user details for activity log
           const user = await db.select()
             .from(users)
             .where(eq(users.id, application.userId))
@@ -103,7 +97,6 @@ export async function PUT(request: NextRequest) {
 
           const userName = user.length > 0 ? user[0].name : 'User';
 
-          // Get current activities and parse properly
           let currentActivities: any[] = [];
           
           if (project[0].activities) {
@@ -122,7 +115,6 @@ export async function PUT(request: NextRequest) {
             ? Math.max(...currentActivities.map((a: any) => a.id || 0))
             : 0;
 
-          // Create activity log entry
           const newActivity = {
             id: maxActivityId + 1,
             userId: application.userId,
@@ -133,7 +125,6 @@ export async function PUT(request: NextRequest) {
 
           const updatedActivities = [newActivity, ...currentActivities];
 
-          // Update project with new member and activity
           await db.update(projects)
             .set({
               members: updatedMembers,
@@ -142,7 +133,6 @@ export async function PUT(request: NextRequest) {
             })
             .where(eq(projects.id, application.projectId));
 
-          // Create notification for the applicant
           await db.insert(notifications).values({
             userId: application.userId,
             type: 'application',
@@ -150,6 +140,20 @@ export async function PUT(request: NextRequest) {
             read: false,
             createdAt: new Date().toISOString()
           });
+
+          // Award XP for joining a project
+          try {
+            await fetch(`${request.nextUrl.origin}/api/users/${application.userId}/xp`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                xpAmount: XP_REWARDS.JOIN_PROJECT,
+                action: 'join_project'
+              })
+            });
+          } catch (error) {
+            console.error('Failed to award XP:', error);
+          }
         }
       }
     }

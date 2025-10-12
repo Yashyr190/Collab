@@ -107,9 +107,10 @@ export default function ResourcesPage() {
       });
 
       if (response.ok) {
+        const data = await response.json();
         toast({
           title: "Resource added!",
-          description: "Your resource has been shared with the community",
+          description: `Your resource has been shared. +${data.xpAwarded || 15} XP earned! 🎉`,
         });
         setAddDialogOpen(false);
         setNewResource({
@@ -120,6 +121,11 @@ export default function ResourcesPage() {
           category: "general",
         });
         loadResources();
+        
+        // Update user XP in localStorage
+        const updatedUser = { ...user, xp: (user.xp || 0) + (data.xpAwarded || 15) };
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        setUser(updatedUser);
       } else {
         const error = await response.json();
         toast({

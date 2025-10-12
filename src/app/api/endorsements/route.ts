@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { endorsements } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
+import { XP_REWARDS } from '@/lib/badges';
 
 export async function GET(request: NextRequest) {
   try {
@@ -108,7 +109,24 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     }).returning();
     
-    return NextResponse.json(newRecord[0], { status: 201 });
+    // Award XP for receiving an endorsement
+    try {
+      await fetch(`${request.nextUrl.origin}/api/users/${userId}/xp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          xpAmount: XP_REWARDS.ENDORSEMENT_RECEIVED,
+          action: 'endorsement_received'
+        })
+      });
+    } catch (error) {
+      console.error('Failed to award XP:', error);
+    }
+    
+    return NextResponse.json({
+      ...newRecord[0],
+      xpAwarded: XP_REWARDS.ENDORSEMENT_RECEIVED
+    }, { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
     return NextResponse.json({ error: 'Internal server error: ' + error }, { status: 500 });

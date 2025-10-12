@@ -22,6 +22,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
+import { BADGES, getBadgeById } from "@/lib/badges";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -310,21 +311,44 @@ export default function ProfilePage() {
               <Card>
                 <CardContent className="py-12 text-center">
                   <Award className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No badges earned yet</p>
+                  <p className="text-muted-foreground mb-2">No badges earned yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Complete tasks, share resources, and create projects to earn badges!
+                  </p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid md:grid-cols-3 gap-4">
-                {profileUser.badges.map((badge: string, i: number) => (
-                  <Card key={i}>
+                {profileUser.badges.map((badgeId: string, i: number) => {
+                  const badge = getBadgeById(badgeId);
+                  return (
+                    <Card key={i} className="hover:shadow-lg transition-shadow">
+                      <CardContent className="pt-6 text-center">
+                        <div className="text-6xl mb-4">{badge?.icon || "🏆"}</div>
+                        <h3 className="font-semibold text-lg mb-2">{badge?.name || badgeId}</h3>
+                        <p className="text-sm text-muted-foreground">{badge?.description || "Achievement unlocked!"}</p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Show available badges to earn */}
+            <div className="mt-8">
+              <h3 className="text-xl font-semibold mb-4">Available Badges</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                {BADGES.filter(badge => !profileUser.badges?.includes(badge.id)).slice(0, 6).map((badge) => (
+                  <Card key={badge.id} className="opacity-60">
                     <CardContent className="pt-6 text-center">
-                      <Award className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-                      <h3 className="font-semibold">{badge}</h3>
+                      <div className="text-6xl mb-4 grayscale">{badge.icon}</div>
+                      <h3 className="font-semibold text-lg mb-2">{badge.name}</h3>
+                      <p className="text-sm text-muted-foreground">{badge.description}</p>
                     </CardContent>
                   </Card>
                 ))}
               </div>
-            )}
+            </div>
           </TabsContent>
 
           <TabsContent value="endorsements" className="space-y-4">
