@@ -44,7 +44,25 @@ export default function PostDetailPage() {
       const response = await fetch(`/api/posts/${postId}`);
       if (response.ok) {
         const postData = await response.json();
-        setPost(postData);
+        
+        // Parse tags to ensure they're always an array
+        let parsedTags = [];
+        try {
+          if (Array.isArray(postData.tags)) {
+            parsedTags = postData.tags;
+          } else if (typeof postData.tags === 'string') {
+            if (postData.tags.startsWith('[')) {
+              parsedTags = JSON.parse(postData.tags);
+            } else if (postData.tags) {
+              parsedTags = postData.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t);
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse tags for post:', postData.id, e);
+          parsedTags = [];
+        }
+        
+        setPost({ ...postData, tags: parsedTags });
         
         // Load author data
         const authorResponse = await fetch(`/api/users?id=${postData.userId}`);
