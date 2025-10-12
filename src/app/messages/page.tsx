@@ -246,7 +246,13 @@ export default function MessagesPage() {
             <h1 className="text-3xl font-bold mb-2">Messages</h1>
             <p className="text-muted-foreground">Connect with collaborators</p>
           </div>
-          <Dialog open={newChatDialogOpen} onOpenChange={setNewChatDialogOpen}>
+          <Dialog open={newChatDialogOpen} onOpenChange={(open) => {
+            setNewChatDialogOpen(open);
+            if (open) {
+              // Refresh users list when dialog opens
+              loadAllUsers();
+            }
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />

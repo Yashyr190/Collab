@@ -89,7 +89,12 @@ export default function ProjectDetailPage() {
 
   const loadProject = async (projectId: string, userData: any) => {
     try {
-      const response = await fetch(`/api/projects?id=${projectId}`);
+      const response = await fetch(`/api/projects?id=${projectId}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setProject(data);
@@ -97,22 +102,24 @@ export default function ProjectDetailPage() {
         // Load members
         const memberIds = safeJsonParse(data.members, []);
         if (memberIds.length > 0) {
-          loadMembers(memberIds);
+          await loadMembers(memberIds);
+        } else {
+          setMembers([]);
         }
 
         // Load tasks from new API
-        loadTasks(projectId);
+        await loadTasks(projectId);
 
         // Load activities from new API
-        loadActivities(projectId);
+        await loadActivities(projectId);
 
         // Load applications if owner
         if (userData.id === data.ownerId) {
-          loadApplications(projectId);
+          await loadApplications(projectId);
         }
 
         // Check if user has already applied
-        checkUserApplication(projectId, userData.id);
+        await checkUserApplication(projectId, userData.id);
       }
     } catch (error) {
       console.error("Failed to load project:", error);
@@ -280,7 +287,10 @@ export default function ProjectDetailPage() {
         });
         setTaskDialogOpen(false);
         setNewTask({ title: "", description: "", status: "pending" });
-        loadTasks(params.id as string);
+        await loadTasks(params.id as string);
+        
+        // Recalculate and update progress
+        await updateProjectProgress();
         
         // Create activity log
         await fetch(`/api/projects/${params.id}/activity`, {
@@ -293,6 +303,9 @@ export default function ProjectDetailPage() {
           }),
         });
         loadActivities(params.id as string);
+        
+        // Reload project to get updated progress
+        await loadProject(params.id as string, user);
       } else {
         const error = await response.json();
         toast({
@@ -310,6 +323,23 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const updateProjectProgress = async () => {
+    // Calculate progress based on completed tasks
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const totalTasks = tasks.length + 1; // +1 for the task just created
+    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    
+    try {
+      await fetch(`/api/projects/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress }),
+      });
+    } catch (error) {
+      console.error("Failed to update progress:", error);
+    }
+  };
+
   const handleUpdateTaskStatus = async (taskId: number, newStatus: string) => {
     try {
       const response = await fetch(`/api/projects/${params.id}/tasks/${taskId}`, {
@@ -323,7 +353,10 @@ export default function ProjectDetailPage() {
           title: "Task updated!",
           description: `Task status changed to ${newStatus}`,
         });
-        loadTasks(params.id as string);
+        await loadTasks(params.id as string);
+        
+        // Reload project to get updated progress
+        await loadProject(params.id as string, user);
         
         // Create activity log
         const task = tasks.find(t => t.id === taskId);
@@ -358,7 +391,10 @@ export default function ProjectDetailPage() {
           title: "Task deleted",
           description: "Task has been removed from the project",
         });
-        loadTasks(params.id as string);
+        await loadTasks(params.id as string);
+        
+        // Reload project to get updated progress
+        await loadProject(params.id as string, user);
       }
     } catch (error) {
       toast({

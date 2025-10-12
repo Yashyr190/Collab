@@ -97,11 +97,17 @@ export async function PUT(request: NextRequest) {
 
     tasks[taskIndex] = updatedTask;
 
-    // Update project with modified tasks array
+    // Calculate progress based on completed tasks
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const totalTasks = tasks.length;
+    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Update project with modified tasks array and calculated progress
     const updatedProject = await db
       .update(projects)
       .set({
         tasks: tasks as any,
+        progress,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(projects.id, parsedProjectId))
@@ -174,11 +180,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Update project with filtered tasks array
+    // Calculate progress based on remaining completed tasks
+    const completedTasks = filteredTasks.filter(t => t.status === 'completed').length;
+    const totalTasks = filteredTasks.length;
+    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Update project with filtered tasks array and calculated progress
     await db
       .update(projects)
       .set({
         tasks: filteredTasks as any,
+        progress,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(projects.id, parsedProjectId))
