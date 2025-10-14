@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { motion } from "framer-motion";
 import { 
   Rocket, 
@@ -15,11 +16,56 @@ import {
   CheckCircle2,
   Zap,
   Target,
-  Globe
+  Globe,
+  Star,
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+// Safe JSON parse helper
+const safeJsonParse = (value: any, fallback: any = []) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
 
 export default function LandingPage() {
+  const [topProjects, setTopProjects] = useState<any[]>([]);
+  const [topCollaborators, setTopCollaborators] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTopContent();
+  }, []);
+
+  const loadTopContent = async () => {
+    try {
+      const [projectsRes, collaboratorsRes] = await Promise.all([
+        fetch("/api/projects/top-rated"),
+        fetch("/api/users/top-collaborators")
+      ]);
+
+      if (projectsRes.ok) {
+        const projects = await projectsRes.json();
+        setTopProjects(projects);
+      }
+
+      if (collaboratorsRes.ok) {
+        const collaborators = await collaboratorsRes.json();
+        setTopCollaborators(collaborators);
+      }
+    } catch (error) {
+      console.error("Failed to load top content:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
       {/* Navigation */}
@@ -122,6 +168,174 @@ export default function LandingPage() {
               </div>
             </Card>
           </motion.div>
+        </div>
+      </section>
+
+      {/* Top Rated Projects Section */}
+      <section className="container mx-auto px-4 py-20 bg-muted/30">
+        <div className="text-center mb-12">
+          <Badge className="mb-4" variant="outline">
+            <Star className="w-3 h-3 mr-1 fill-primary text-primary" />
+            Top Rated Projects
+          </Badge>
+          <h2 className="text-4xl font-bold mb-4">Trending Collaborations</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Discover the highest-rated projects from our community
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Card key={i} className="h-48 animate-pulse bg-muted" />
+            ))}
+          </div>
+        ) : topProjects.length === 0 ? (
+          <Card className="max-w-2xl mx-auto">
+            <CardContent className="py-12 text-center">
+              <FolderKanban className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No rated projects yet</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {topProjects.map((project, i) => (
+              <motion.div
+                key={project.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+              >
+                <Link href={`/projects/${project.id}`}>
+                  <Card className="h-full hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+                    <CardHeader>
+                      <div className="flex items-start justify-between mb-2">
+                        <Badge variant={
+                          project.status === "active" ? "default" : 
+                          project.status === "planning" ? "secondary" : "outline"
+                        }>
+                          {project.status}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
+                          <span className="font-semibold">{project.averageRating?.toFixed(1) || "0.0"}</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({project.totalRatings})
+                          </span>
+                        </div>
+                      </div>
+                      <CardTitle className="line-clamp-1">{project.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {project.description}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Users className="w-4 h-4" />
+                        <span>{safeJsonParse(project.members, []).length} members</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        <div className="text-center mt-8">
+          <Link href="/feed">
+            <Button variant="outline" size="lg">
+              View All Projects
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </Link>
+        </div>
+      </section>
+
+      {/* Top Collaborators Section */}
+      <section className="container mx-auto px-4 py-20">
+        <div className="text-center mb-12">
+          <Badge className="mb-4" variant="outline">
+            <TrendingUp className="w-3 h-3 mr-1" />
+            Leaderboard
+          </Badge>
+          <h2 className="text-4xl font-bold mb-4">Top Collaborators</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Meet the most active and skilled members of our community
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="grid md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Card key={i} className="h-24 animate-pulse bg-muted" />
+            ))}
+          </div>
+        ) : topCollaborators.length === 0 ? (
+          <Card className="max-w-2xl mx-auto">
+            <CardContent className="py-12 text-center">
+              <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No collaborators yet</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+            {topCollaborators.map((user, i) => (
+              <motion.div
+                key={user.id}
+                initial={{ opacity: 0, x: i % 2 === 0 ? -20 : 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+              >
+                <Link href={`/profile/${user.id}`}>
+                  <Card className="hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <Avatar className="w-12 h-12">
+                            <AvatarImage src={user.avatar} alt={user.name} />
+                            <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          {i < 3 && (
+                            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-xs font-bold text-white">
+                              {i + 1}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate">{user.name}</h3>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Zap className="w-3 h-3 text-yellow-500" />
+                            <span className="font-medium">{user.xp} XP</span>
+                          </div>
+                        </div>
+                        {safeJsonParse(user.badges, []).length > 0 && (
+                          <Badge variant="secondary">
+                            <Trophy className="w-3 h-3 mr-1" />
+                            {safeJsonParse(user.badges, []).length}
+                          </Badge>
+                        )}
+                      </div>
+                      {user.bio && (
+                        <p className="text-sm text-muted-foreground mt-3 line-clamp-2">
+                          {user.bio}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        <div className="text-center mt-8">
+          <Link href="/leaderboard">
+            <Button variant="outline" size="lg">
+              View Full Leaderboard
+              <Trophy className="w-4 h-4 ml-2" />
+            </Button>
+          </Link>
         </div>
       </section>
 

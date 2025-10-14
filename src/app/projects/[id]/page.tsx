@@ -28,6 +28,7 @@ import {
   UserPlus,
   Plus,
   Trash2,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +64,11 @@ export default function ProjectDetailPage() {
   const [applicationMessage, setApplicationMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
+  
+  // Rating state
+  const [ratingData, setRatingData] = useState<any>({ averageRating: 0, totalRatings: 0, userRating: null });
+  const [hoveredRating, setHoveredRating] = useState(0);
+  const [submittingRating, setSubmittingRating] = useState(false);
   
   // Task form state
   const [newTask, setNewTask] = useState({
@@ -102,6 +108,9 @@ export default function ProjectDetailPage() {
         const data = await response.json();
         setProject(data);
         
+        // Load rating data
+        await loadRating(projectId, userData.id);
+        
         // Load members with fresh data
         const memberIds = safeJsonParse(data.members, []);
         console.log('Loading members:', memberIds);
@@ -129,6 +138,64 @@ export default function ProjectDetailPage() {
       console.error("Failed to load project:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRating = async (projectId: string, userId: number) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/rating?userId=${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setRatingData(data);
+      }
+    } catch (error) {
+      console.error("Failed to load rating:", error);
+    }
+  };
+
+  const handleRateProject = async (rating: number) => {
+    if (!user || submittingRating) return;
+    
+    setSubmittingRating(true);
+    try {
+      const response = await fetch(`/api/projects/${params.id}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating,
+          userId: user.id,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: "Rating submitted!",
+          description: `You rated this project ${rating} star${rating !== 1 ? 's' : ''}`,
+        });
+        
+        // Reload rating data
+        await loadRating(params.id as string, user.id);
+        
+        // Update project data with new ratings
+        setProject(data);
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Failed to submit rating",
+          description: error.error || "Something went wrong",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit rating",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingRating(false);
+      setHoveredRating(0);
     }
   };
 
@@ -534,6 +601,60 @@ export default function ProjectDetailPage() {
                     <span className="font-semibold">{project.progress}%</span>
                   </div>
                   <Progress value={project.progress} className="h-2" />
+                </div>
+                
+                <Separator />
+                
+                {/* Rating Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Star className="w-5 h-5 fill-yellow-500 text-yellow-500" />
+                      <div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-bold">
+                            {ratingData.averageRating > 0 ? ratingData.averageRating.toFixed(1) : "0.0"}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            ({ratingData.totalRatings} {ratingData.totalRatings === 1 ? 'rating' : 'ratings'})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {!isOwner && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        {ratingData.userRating ? 'Your rating:' : 'Rate this project:'}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => handleRateProject(star)}
+                            onMouseEnter={() => setHoveredRating(star)}
+                            onMouseLeave={() => setHoveredRating(0)}
+                            disabled={submittingRating}
+                            className="transition-transform hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Star
+                              className={`w-6 h-6 transition-colors ${
+                                star <= (hoveredRating || ratingData.userRating || 0)
+                                  ? 'fill-yellow-500 text-yellow-500'
+                                  : 'text-muted-foreground'
+                              }`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                      {ratingData.userRating && (
+                        <p className="text-xs text-muted-foreground">
+                          Click to change your rating
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 
                 <Separator />

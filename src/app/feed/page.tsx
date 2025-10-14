@@ -36,13 +36,27 @@ import {
   MessageSquare,
   Loader2,
   Filter,
+  Star,
+  FolderKanban,
 } from "lucide-react";
 import Link from "next/link";
+
+// Safe JSON parse helper
+const safeJsonParse = (value: any, fallback: any = []) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
 
 export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,18 +81,22 @@ export default function FeedPage() {
 
     const userData = JSON.parse(storedUser);
     setUser(userData);
-    loadPosts();
+    loadContent();
   }, [router]);
 
   useEffect(() => {
     filterPosts();
   }, [posts, searchQuery, typeFilter, statusFilter]);
 
-  const loadPosts = async () => {
+  const loadContent = async () => {
     try {
-      const response = await fetch("/api/posts?limit=50");
-      if (response.ok) {
-        const data = await response.json();
+      const [postsRes, projectsRes] = await Promise.all([
+        fetch("/api/posts?limit=50"),
+        fetch("/api/projects/top-rated")
+      ]);
+
+      if (postsRes.ok) {
+        const data = await postsRes.json();
         // Robust tag parsing that handles all formats
         const postsWithParsedTags = data.map((post: any) => {
           let parsedTags = [];
@@ -100,8 +118,13 @@ export default function FeedPage() {
         });
         setPosts(postsWithParsedTags);
       }
+
+      if (projectsRes.ok) {
+        const projectsData = await projectsRes.json();
+        setProjects(projectsData.slice(0, 3)); // Show top 3 rated projects
+      }
     } catch (error) {
-      console.error("Failed to load posts:", error);
+      console.error("Failed to load content:", error);
     } finally {
       setLoading(false);
     }
@@ -268,6 +291,64 @@ export default function FeedPage() {
           </Dialog>
         </div>
 
+        {/* Top Rated Projects Section */}
+        {!loading && projects.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Star className="w-6 h-6 fill-yellow-500 text-yellow-500" />
+                  Top Rated Projects
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Check out highly-rated projects from the community
+                </p>
+              </div>
+              <Link href="/projects">
+                <Button variant="outline" size="sm">View All</Button>
+              </Link>
+            </div>
+            
+            <div className="grid md:grid-cols-3 gap-4">
+              {projects.map((project) => (
+                <Link key={project.id} href={`/projects/${project.id}`}>
+                  <Card className="h-full hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+                    <CardHeader>
+                      <div className="flex items-start justify-between mb-2">
+                        <Badge variant={
+                          project.status === "active" ? "default" : 
+                          project.status === "planning" ? "secondary" : "outline"
+                        }>
+                          {project.status}
+                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
+                          <span className="font-semibold text-sm">
+                            {project.averageRating?.toFixed(1) || "0.0"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ({project.totalRatings})
+                          </span>
+                        </div>
+                      </div>
+                      <CardTitle className="line-clamp-1 text-lg">{project.title}</CardTitle>
+                      <CardDescription className="line-clamp-2 text-sm">
+                        {project.description}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Users className="w-4 h-4" />
+                        <span>{safeJsonParse(project.members, []).length} members</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Search and Filters */}
         <Card>
           <CardContent className="pt-6">
@@ -309,90 +390,93 @@ export default function FeedPage() {
         </Card>
 
         {/* Posts List */}
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-48" />
-            ))}
-          </div>
-        ) : filteredPosts.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">No posts found</p>
-              <Button onClick={() => setDialogOpen(true)}>
-                Create First Post
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6">
-            {filteredPosts.map((post) => (
-              <Card
-                key={post.id}
-                className="hover:shadow-lg transition-shadow cursor-pointer"
-              >
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge
-                          variant={
-                            post.type === "collab"
-                              ? "default"
-                              : post.type === "project"
-                              ? "secondary"
-                              : "outline"
-                          }
-                        >
-                          {post.type}
-                        </Badge>
-                        <Badge
-                          variant={
-                            post.status === "open"
-                              ? "default"
-                              : post.status === "in_progress"
-                              ? "secondary"
-                              : "outline"
-                          }
-                        >
-                          {post.status}
-                        </Badge>
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Recent Posts</h2>
+          {loading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-48" />
+              ))}
+            </div>
+          ) : filteredPosts.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Users className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">No posts found</p>
+                <Button onClick={() => setDialogOpen(true)}>
+                  Create First Post
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6">
+              {filteredPosts.map((post) => (
+                <Card
+                  key={post.id}
+                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge
+                            variant={
+                              post.type === "collab"
+                                ? "default"
+                                : post.type === "project"
+                                ? "secondary"
+                                : "outline"
+                            }
+                          >
+                            {post.type}
+                          </Badge>
+                          <Badge
+                            variant={
+                              post.status === "open"
+                                ? "default"
+                                : post.status === "in_progress"
+                                ? "secondary"
+                                : "outline"
+                            }
+                          >
+                            {post.status}
+                          </Badge>
+                        </div>
+                        <CardTitle className="text-xl mb-2">{post.title}</CardTitle>
+                        <CardDescription className="line-clamp-2">
+                          {post.description}
+                        </CardDescription>
                       </div>
-                      <CardTitle className="text-xl mb-2">{post.title}</CardTitle>
-                      <CardDescription className="line-clamp-2">
-                        {post.description}
-                      </CardDescription>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {post.tags &&
-                      post.tags.map((tag: string, i: number) => (
-                        <Badge key={i} variant="outline">
-                          <Tag className="w-3 h-3 mr-1" />
-                          {tag}
-                        </Badge>
-                      ))}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="w-4 h-4" />
-                      {new Date(post.createdAt).toLocaleDateString()}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {post.tags &&
+                        post.tags.map((tag: string, i: number) => (
+                          <Badge key={i} variant="outline">
+                            <Tag className="w-3 h-3 mr-1" />
+                            {tag}
+                          </Badge>
+                        ))}
                     </div>
-                    <Link href={`/posts/${post.id}`}>
-                      <Button variant="outline" size="sm">
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        View Details
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(post.createdAt).toLocaleDateString()}
+                      </div>
+                      <Link href={`/posts/${post.id}`}>
+                        <Button variant="outline" size="sm">
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          View Details
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

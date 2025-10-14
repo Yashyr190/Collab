@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core';
 
 // Users table
 export const users = sqliteTable('users', {
@@ -40,6 +40,8 @@ export const projects = sqliteTable('projects', {
   activities: text('activities', { mode: 'json' }),
   status: text('status').notNull(),
   progress: integer('progress').default(0),
+  average_rating: real('average_rating').default(0),
+  total_ratings: integer('total_ratings').default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -93,5 +95,14 @@ export const endorsements = sqliteTable('endorsements', {
   userId: integer('user_id').references(() => users.id).notNull(),
   endorsedBy: integer('endorsed_by').references(() => users.id).notNull(),
   skill: text('skill').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+// Add new project_ratings table
+export const projectRatings = sqliteTable('project_ratings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  projectId: integer('project_id').references(() => projects.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  rating: integer('rating').notNull(),
   createdAt: text('created_at').notNull(),
 });
